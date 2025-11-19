@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  cex-balance-service:
+    container_name: markhor-cex-balance
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: markhor/cex-balance-service:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend/config.yml:/app/config.yml:ro
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - markhor-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  markhor-network:
+    driver: bridge
+    name: markhor-network
+
+volumes:
+  logs:
+    driver: local
+

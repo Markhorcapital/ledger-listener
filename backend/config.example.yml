@@ -1,0 +1,38 @@
+# MongoDB Configuration
+mongodb:
+  host: your-mongodb-host
+  port: 27017
+  username: your-username
+  password: your-password
+  auth_source: admin
+  database: markhor
+  collection: cexaccounts
+
+# API Configuration
+api:
+  title: "Markhor CEX Balance Service"
+  version: "1.0.0"
+  description: "Fetch balances from multiple CEX accounts"
+  auth_token: "CHANGE-THIS-TO-A-SECURE-TOKEN"
+
+# Service Configuration
+service:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 1
+  log_level: "info"
+
+# Exchange Configuration
+exchanges:
+  timeout: 8000  # milliseconds (8 seconds - aggressive timeout)
+  retry_attempts: 1  # Only 1 retry for speed (total 2 attempts)
+  rate_limit: false  # Disable rate limiting for speed
+  
+  # Map database exchange names to CCXT exchange IDs
+  # Add new exchanges here as needed
+  name_mapping:
+    Gate_io: gateio
+    HTX: huobi  # HTX was rebranded from Huobi, CCXT still uses 'huobi'
+    MEXC: mexc
+    Crypto_com: cryptocom
+
