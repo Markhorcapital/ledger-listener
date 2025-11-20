@@ -90,6 +90,8 @@ pip install -r backend/requirements.txt
 cd backend
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
+
+lsof -ti:8080 | xargs kill -9 && sleep 1 && python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 # Test in another terminal
 python test_api.py
 ```

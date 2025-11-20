@@ -15,6 +15,10 @@ api:
   description: "Fetch balances from multiple CEX accounts"
   auth_token: "CHANGE-THIS-TO-A-SECURE-TOKEN"
 
+# Encryption Configuration
+encryption:
+  secret: "your-encryption-secret-key-here"
+
 # Service Configuration
 service:
   host: "0.0.0.0"

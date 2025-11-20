@@ -4,6 +4,10 @@ from pymongo.collection import Collection
 from typing import List, Dict, Any
 from urllib.parse import quote_plus
 from app.config import config
+from app.encryption import Encryption
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -13,6 +17,9 @@ class Database:
         self.client: MongoClient = None
         self.db = None
         self.collection: Collection = None
+        # Initialize encryption with secret from config
+        encryption_secret = config.get('encryption.secret')
+        self.encryption = Encryption(encryption_secret) if encryption_secret else None
     
     def connect(self):
         """Establish MongoDB connection"""
@@ -39,29 +46,71 @@ class Database:
     
     def get_active_accounts(self) -> List[Dict[str, Any]]:
         """
-        Fetch all active CEX accounts from database
+        Fetch all CEX accounts from database and decrypt API credentials
         
         Returns:
-            List of account documents with credentials
+            List of account documents with decrypted credentials
         """
         if self.collection is None:
             self.connect()
         
-        # Query only active accounts
+        # Query all documents from apicredentials collection
         accounts = list(self.collection.find(
-            {"isActive": True},
+            {},
             {
-                "accountId": 1,
+                "name": 1,
                 "exchange": 1,
                 "accountName": 1,
                 "apiKey": 1,
                 "apiSecret": 1,
-                "uid": 1,
                 "_id": 0
             }
         ))
         
-        return accounts
+        # Transform and decrypt
+        result = []
+        for account in accounts:
+            # Map exchange names to match config.yml format
+            exchange_raw = account.get('exchange', '').lower()
+            exchange_map = {
+                'gate': 'Gate_io',
+                'gate.io': 'Gate_io',
+                'gateio': 'Gate_io',
+                'htx': 'HTX',
+                'mexc': 'MEXC',
+                'crypto': 'Crypto_com',
+                'crypto.com': 'Crypto_com',
+                'cryptocom': 'Crypto_com'
+            }
+            exchange_name = exchange_map.get(exchange_raw, 'Gate_io' if 'gate' in exchange_raw else exchange_raw.upper())
+            
+            # Create accountId from components
+            account_name = account.get('accountName', '')
+            account_id = f"{account.get('name', 'unknown')}-{exchange_raw}-{account_name}".lower()
+            
+            transformed = {
+                'accountId': account_id,
+                'exchange': exchange_name,
+                'accountName': account_name,
+                'apiKey': account.get('apiKey', ''),
+                'apiSecret': account.get('apiSecret', ''),
+            }
+            
+            # Decrypt both apiKey and apiSecret if encryption is enabled
+            if self.encryption:
+                for field in ['apiKey', 'apiSecret']:
+                    if transformed[field] and ':' in transformed[field]:
+                        try:
+                            transformed[field] = self.encryption.decrypt(transformed[field])
+                            logger.debug(f"Decrypted {field} for {account_name}")
+                        except Exception as e:
+                            logger.error(f"Failed to decrypt {field} for {account_name}: {str(e)}")
+                            # Keep encrypted value if decryption fails
+            
+            result.append(transformed)
+        
+        logger.info(f"Loaded {len(result)} accounts from database")
+        return result
 
 
 # Global database instance

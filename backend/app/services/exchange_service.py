@@ -195,6 +195,13 @@ class ExchangeService:
                         total=float(total)
                     )
             
+            # Always ensure ALI and USDT/USD exist (even if 0) for consistency
+            quote_currency = 'USD' if exchange_name == 'Crypto_com' else 'USDT'
+            if 'ALI' not in balances:
+                balances['ALI'] = BalanceInfo(free=0.0, used=0.0, total=0.0)
+            if quote_currency not in balances:
+                balances[quote_currency] = BalanceInfo(free=0.0, used=0.0, total=0.0)
+            
             elapsed = time.time() - start_time
             logger.info(f"[{exchange_name}] ✅ Success in {elapsed:.2f}s - {len(balances)} currencies")
             
@@ -210,12 +217,16 @@ class ExchangeService:
             elapsed = time.time() - start_time
             logger.error(f"[{exchange_name}] ❌ Failed in {elapsed:.2f}s - {str(e)[:100]}")
             
-            # Return error info
+            # Return error info with 0 balances for ALI and USDT/USD
+            quote_currency = 'USD' if exchange_name == 'Crypto_com' else 'USDT'
             return AccountBalance(
                 account_id=account_id,
                 account_name=account_name,
                 exchange=exchange_name,
-                balances={},
+                balances={
+                    "ALI": BalanceInfo(free=0.0, used=0.0, total=0.0),
+                    quote_currency: BalanceInfo(free=0.0, used=0.0, total=0.0)
+                },
                 error=str(e),
                 timestamp=timestamp
             )
