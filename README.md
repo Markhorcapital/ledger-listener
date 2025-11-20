@@ -2,19 +2,6 @@
 
 FastAPI service to fetch balances from Gate.io, HTX, MEXC, and Crypto.com. Reads credentials from MongoDB, returns JSON via REST API.
 
-## Quick Start
-
-```bash
-# 1. Update auth token in backend/config.yml
-nano backend/config.yml  # Change api.auth_token
-
-# 2. Start with Docker
-docker-compose up -d
-
-# 3. Test
-curl http://localhost:8080/health
-curl -H "Authorization: Bearer Ur2ZINGALaHYceS-DlVK4paC8LXXhMLPw-gLP3vTiGE" http://localhost:8080/api/balances
-```
 
 ## API Endpoints
 
@@ -58,24 +45,6 @@ google-apps-script/
 ```
 
 ## Local Testing
-
-### Option 1: Docker (Recommended)
-```bash
-# Build and start
-docker-compose up --build
-
-# Test in another terminal
-curl http://localhost:8080/health
-curl -H "Authorization: Bearer Ur2ZINGALaHYceS-DlVK4paC8LXXhMLPw-gLP3vTiGE" http://localhost:8080/api/balances | jq
-
-# Expected response time: 5-12 seconds (all exchanges fetched in parallel)
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
-```
 
 ### Option 2: Python Virtual Environment
 ```bash
@@ -132,8 +101,10 @@ cd Ledger-Update_Service
 nano backend/config.yml
 # Change: api.auth_token to a secure token
 
+docker-compose down
+
 # 5. Start service
-docker-compose up -d
+docker-compose up -d --build
 
 # 6. Verify
 curl http://localhost:8080/health

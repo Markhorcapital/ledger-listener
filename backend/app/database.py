@@ -80,9 +80,10 @@ class Database:
                 'mexc': 'MEXC',
                 'crypto': 'Crypto_com',
                 'crypto.com': 'Crypto_com',
-                'cryptocom': 'Crypto_com'
+                'cryptocom': 'Crypto_com',
+                'crypto_com': 'Crypto_com'  # Added explicit mapping
             }
-            exchange_name = exchange_map.get(exchange_raw, 'Gate_io' if 'gate' in exchange_raw else exchange_raw.upper())
+            exchange_name = exchange_map.get(exchange_raw, exchange_raw.upper())
             
             # Create accountId from components
             account_name = account.get('accountName', '')

@@ -148,16 +148,16 @@ function updateSheet(balanceData) {
 
   // Get last row and create new row
   const lastRow = sheet.getLastRow();
-  const previousRow = lastRow;
   sheet.insertRowsAfter(lastRow, 1);
   const newRow = lastRow + 1;
 
   // Set date in column A
   sheet.getRange(newRow, 1).setValue(dateString);
 
-  // Get previous row data for carrying forward balances
+  // Get previous non-empty row data for carrying forward balances
+  // Need to loop backwards to find last row with actual data (skip weekends/empty rows)
   const maxCol = 50; // Max column we care about
-  const previousRowData = sheet.getRange(previousRow, 1, 1, maxCol).getValues()[0];
+  const previousRowData = getPreviousNonEmptyRowData(sheet, lastRow, maxCol);
 
   // Process each exchange
   CONFIG.EXCHANGES.forEach(function(exchangeConfig) {
@@ -237,6 +237,40 @@ function getCurrencyTotal(balanceMap, symbol) {
   }
   const currencyInfo = balanceMap[symbol];
   return currencyInfo.total !== undefined ? currencyInfo.total : 0;
+}
+
+// Get previous non-empty row data, searching backwards through empty rows
+function getPreviousNonEmptyRowData(sheet, startRow, maxCol) {
+  // Start from the row before the new row (the last row)
+  // Loop backwards up to 30 rows (to cover weekends + holidays)
+  const maxRowsToCheck = 30;
+  
+  for (let rowOffset = 0; rowOffset < maxRowsToCheck; rowOffset++) {
+    const checkRow = startRow - rowOffset;
+    
+    // Don't go before row 3 (rows 1-2 are headers)
+    if (checkRow < 3) {
+      Logger.log('Warning: Reached header rows, no previous data found');
+      // Return empty array
+      return new Array(maxCol).fill(0);
+    }
+    
+    const rowData = sheet.getRange(checkRow, 1, 1, maxCol).getValues()[0];
+    
+    // Check if this row has data (check if date column and some balance columns are not empty)
+    // Check columns 2, 14, 26, 38 (first ALI columns of each exchange)
+    const hasData = rowData[0] && // Date column
+                    (rowData[1] || rowData[13] || rowData[25] || rowData[37]); // At least one ALI value
+    
+    if (hasData) {
+      Logger.log('Found previous non-empty row at: ' + checkRow + ' (offset: ' + rowOffset + ')');
+      return rowData;
+    }
+  }
+  
+  // If no data found in last 30 rows, return zeros
+  Logger.log('Warning: No non-empty row found in last ' + maxRowsToCheck + ' rows');
+  return new Array(maxCol).fill(0);
 }
 
 // ==================== UTILITY FUNCTIONS ====================
