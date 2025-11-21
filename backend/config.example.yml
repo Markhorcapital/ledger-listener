@@ -50,89 +50,78 @@ pricing:
     vs_currency: "usd"
     timeout: 5
     asset_symbol: "ALI"
+    dex_price_ids:
+      ALI: "alethea-artificial-liquid-intelligence-token"
+      ETH: "ethereum"
+      POL: "polygon-ecosystem-token"
+      SOL: "solana"
 
-# On-chain DEX balance configuration
-dex:
-  rpc_timeout: 10
-  evm:
-    ethereum:
-      rpc_url: "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY"
-      wallets:
+# Reference details for on-chain DEX automation (used by Google Apps Script only)
+dex_sources:
+  alchemy:
+    api_keys:
+      ethereum: "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY"
+      base: "https://base-mainnet.g.alchemy.com/v2/YOUR_KEY"
+      polygon: "https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY"
+      solana: "https://solana-mainnet.g.alchemy.com/v2/YOUR_KEY"
+    wallets:
+      ethereum:
         ETH-ARB-V2: "0x8C7136327886baEbAD0F6Ff6d76d6e18B2d40e2A"
         ETH-ARB-V3: "0x8C7136327886baEbAD0F6Ff6d76d6e18B2d40e2A"
         MAIN: "0x4E4c64239EAFe66d353a61181Aeb449a8080de01"
-      tokens:
+      base:
+        ETH-ARB-V2: "0x8C7136327886baEbAD0F6Ff6d76d6e18B2d40e2A"
+        MAIN: "0x4E4c64239EAFe66d353a61181Aeb449a8080de01"
+      polygon:
+        ETH-ARB-V2: "0x8C7136327886baEbAD0F6Ff6d76d6e18B2d40e2A"
+        MAIN: "0x4E4c64239EAFe66d353a61181Aeb449a8080de01"
+      solana:
+        SOL-ARB: "3P4FJvdp2rrx5SC4AczFPF93PmMGy1JLEqC3m5svKmuW"
+        MAIN: "CTT5pNCYzvKKefYgMnqzSLSqz7jCMndXrhd23JPCRyxa"
+    tokens:
+      ethereum:
         ALI:
           address: "0x6b0b3a982b4634ac68dd83a4dbf02311ce324181"
           decimals: 18
-          price_id: "artificial-liquid-intelligence-token"
         USDC:
           address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
           decimals: 6
-          price_id: "usd-coin"
-          price_symbol: "USDC"
-          fixed_price: 1
         WETH:
           address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
           decimals: 18
-          price_symbol: "ETH"
         ETH:
-          native: true
           decimals: 18
-          price_id: "ethereum"
-    base:
-      rpc_url: "https://base-mainnet.g.alchemy.com/v2/YOUR_KEY"
-      wallets:
-        ETH-ARB-V2: "0x8C7136327886baEbAD0F6Ff6d76d6e18B2d40e2A"
-        MAIN: "0x4E4c64239EAFe66d353a61181Aeb449a8080de01"
-      tokens:
+      base:
         ALI:
           address: "0x97c806e7665d3afd84a8fe1837921403d59f3dcc"
           decimals: 18
-          price_id: "artificial-liquid-intelligence-token"
         WETH:
           address: "0x4200000000000000000000000000000000000006"
           decimals: 18
-          price_symbol: "ETH"
         ETH:
-          native: true
           decimals: 18
-          price_id: "ethereum"
-    polygon:
-      rpc_url: "https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY"
-      wallets:
-        ETH-ARB-V2: "0x8C7136327886baEbAD0F6Ff6d76d6e18B2d40e2A"
-        MAIN: "0x4E4c64239EAFe66d353a61181Aeb449a8080de01"
-      tokens:
+      polygon:
         ALI:
           address: "0xbfc70507384047aa74c29cdc8c5cb88d0f7213ac"
           decimals: 18
-          price_id: "artificial-liquid-intelligence-token"
         WPOL:
           address: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"
           decimals: 18
-          price_symbol: "POL"
         POL:
           native: true
           decimals: 18
-          price_id: "polygon-ecosystem-token"
-  solana:
-    rpc_url: "https://solana-mainnet.g.alchemy.com/v2/YOUR_KEY"
-    wallets:
-      SOL-ARB: "3P4FJvdp2rrx5SC4AczFPF93PmMGy1JLEqC3m5svKmuW"
-      MAIN: "CTT5pNCYzvKKefYgMnqzSLSqz7jCMndXrhd23JPCRyxa"
-    tokens:
-      ALI:
-        mint: "9wvorGtBJ8gyLorFTmwXWcymPoGVUBn6MRzHwFpCdCeC"
-        decimals: 8
-        price_id: "artificial-liquid-intelligence-token"
-      USDC:
-        mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZehLJqV"
-        decimals: 6
-        price_symbol: "USDC"
-        fixed_price: 1
-      SOL:
-        native: true
-        decimals: 9
-        price_id: "solana"
+      solana:
+        ALI:
+          account_map:
+            SOL-ARB: "61g8zwiB4QGY1BXq7AmmLwfVeK89gaARyS9QCBySCGwS"
+            MAIN: "2EDpMz7z1H2V4CqNJ3kF1ifec99yascYPRs8coHDjFw3"
+          decimals: 9
+        USDC:
+          account_map:
+            SOL-ARB: "GHxYCEuA6D5XECcz7RgHujCAi6UUjJ2mAp4Xt1qPp4iQ"
+            MAIN: "5QC8SEDFMmuKqzM3QNhytWWTZuvPxtJ3H6sUoSGwXcN9"
+          decimals: 6
+        SOL:
+          native: true
+          decimals: 9
 

@@ -14,6 +14,7 @@ FastAPI service to fetch balances from Gate.io, HTX, MEXC, and Crypto.com. Reads
   - `totals.by_exchange`: aggregated totals per exchange (e.g., overall ALI holdings on Gate.io)
   - `totals.overall`: network-wide totals per currency (ALI, USDT, USD…)
   - `pricing`: same ALI quote block as `/api/balances`
+- `GET /api/dex/balances` - Returns on-chain balances for the EVM + Solana arbitrage wallets defined under `dex_sources`, plus a `prices` map (ALI/ETH/POL/SOL) fetched from CoinGecko so the Google Sheet can compute USD valuations without hitting third-party APIs directly. Uses the stored Alchemy RPC URLs and wallet/token metadata so the Google Sheet can pull everything with the same Bearer token.
 - `GET /api/dex/balances` - On-chain balances for the DEX ledger (requires auth). Returns:
   - `chains`: balances grouped by chain (ethereum/base/polygon/solana) → wallet label → asset
   - `prices`: USD price map for ALI/ETH/POL/SOL (and any stablecoins with fixed price)

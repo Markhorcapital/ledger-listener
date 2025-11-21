@@ -1,307 +1,251 @@
-"""Service for fetching on-chain balances used by the DEX ledger."""
+"""Fetch on-chain balances for EVM and Solana wallets via Alchemy RPC APIs."""
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from decimal import Decimal, getcontext
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, Tuple, List, Optional, TYPE_CHECKING
 
 import httpx
-from solana.publickey import PublicKey
-from solana.rpc.async_api import AsyncClient
 
 from app.config import config
-from app.services.price_service import PriceService
 
-getcontext().prec = 50
-
-BALANCE_OF_SELECTOR = "0x70a08231"
-
-
-@dataclass
-class TokenConfig:
-    symbol: str
-    decimals: int
-    address: Optional[str] = None
-    price_symbol: Optional[str] = None
-    price_id: Optional[str] = None
-    fixed_price: Optional[float] = None
-    native: bool = False
-    spl_mint: Optional[str] = None
+if TYPE_CHECKING:
+    from app.services.price_service import PriceService
 
 
 class DexBalanceService:
-    """Loads balances for configured EVM and Solana wallets."""
+    def __init__(self, price_service: Optional["PriceService"] = None) -> None:
+        sources = config.get("dex_sources", {}) or {}
+        alchemy = sources.get("alchemy", {})
+        self.rpc_urls: Dict[str, str] = alchemy.get("api_keys", {}) or {}
+        self.wallets: Dict[str, Dict[str, str]] = alchemy.get("wallets", {}) or {}
+        self.tokens: Dict[str, Dict[str, Dict]] = alchemy.get("tokens", {}) or {}
+        self.timeout = httpx.Timeout(15.0)
+        pricing_cfg = config.get("pricing", {}).get("coingecko", {}) or {}
+        self.price_ids: Dict[str, str] = {
+            str(symbol).upper(): str(price_id)
+            for symbol, price_id in (pricing_cfg.get("dex_price_ids") or {}).items()
+            if price_id
+        }
+        self._price_service = price_service
 
-    def __init__(self) -> None:
-        self.config = config.get("dex", {}) or {}
-        self.evm_chains: Dict[str, Dict[str, Any]] = self.config.get("evm", {})
-        self.solana_config: Dict[str, Any] = self.config.get("solana") or {}
-        self.rpc_timeout = self.config.get("rpc_timeout", 10)
-        self.price_service = PriceService()
-
-        (
-            self.price_symbols,
-            self.fixed_price_symbols,
-        ) = self._collect_price_symbols()
-
-    def _collect_price_symbols(self) -> Tuple[Dict[str, str], Dict[str, float]]:
-        """Gather unique price symbols and fixed prices from token config."""
-        price_targets: Dict[str, str] = {}
-        fixed_symbols: Dict[str, float] = {}
-
-        def update_from_tokens(tokens: Dict[str, Any]) -> None:
-            for symbol, raw_cfg in tokens.items():
-                price_symbol = raw_cfg.get("price_symbol", symbol)
-                price_id = raw_cfg.get("price_id")
-                fixed_price = raw_cfg.get("fixed_price")
-                if fixed_price is not None:
-                    fixed_symbols[price_symbol] = float(fixed_price)
-                elif price_id:
-                    price_targets.setdefault(price_symbol, price_id)
-
-        for chain_cfg in self.evm_chains.values():
-            update_from_tokens(chain_cfg.get("tokens", {}))
-        if self.solana_config:
-            update_from_tokens(self.solana_config.get("tokens", {}))
-
-        return price_targets, fixed_symbols
-
-    async def fetch_all_balances(self) -> Dict[str, Any]:
-        """Fetch balances for all configured chains."""
-        chain_results: Dict[str, Any] = {}
+    async def fetch_all_balances(self) -> Dict[str, Dict]:
+        """Fetch balances for all configured chains and wallets."""
         tasks: List[asyncio.Task] = []
 
-        for chain_name, chain_cfg in self.evm_chains.items():
-            tasks.append(
-                asyncio.create_task(
-                    self._fetch_evm_chain(chain_name, chain_cfg),
-                    name=f"evm-{chain_name}",
-                )
-            )
+        for chain_name in self.wallets.keys():
+            if chain_name == "solana":
+                tasks.append(asyncio.create_task(self._fetch_solana_chain()))
+            else:
+                tasks.append(asyncio.create_task(self._fetch_evm_chain(chain_name)))
 
-        if self.solana_config:
-            tasks.append(
-                asyncio.create_task(
-                    self._fetch_solana_chain(), name="solana-chain"
-                )
-            )
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        result: Dict[str, Dict] = {}
+        for payload in results:
+            if isinstance(payload, tuple):
+                chain_name, data = payload
+                result[chain_name] = data
 
-        chain_payloads = await asyncio.gather(*tasks)
-        for payload in chain_payloads:
-            if payload:
-                chain_results[payload["name"]] = payload["data"]
+        price_map: Dict[str, float] = {}
+        if self._price_service and self.price_ids:
+            fetched_prices = await self._price_service.get_prices(self.price_ids)
+            price_map = {symbol.upper(): value for symbol, value in fetched_prices.items()}
 
-        prices = await self._build_price_map()
         return {
-            "chains": chain_results,
-            "prices": prices,
+            "success": True,
+            "chains": result,
+            "prices": price_map,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
-    async def _fetch_evm_chain(
-        self, chain_name: str, chain_cfg: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        rpc_url: str = chain_cfg["rpc_url"]
-        wallets: Dict[str, str] = chain_cfg.get("wallets", {})
-        tokens_cfg: Dict[str, Any] = chain_cfg.get("tokens", {})
-        tokens = {
-            symbol: TokenConfig(
-                symbol=symbol,
-                decimals=int(cfg.get("decimals", 18)),
-                address=(cfg.get("address") or "").lower() if cfg.get("address") else None,
-                price_symbol=cfg.get("price_symbol", symbol),
-                price_id=cfg.get("price_id"),
-                fixed_price=cfg.get("fixed_price"),
-                native=cfg.get("native", False),
-            )
-            for symbol, cfg in tokens_cfg.items()
+    async def _fetch_evm_chain(self, chain: str) -> Tuple[str, Dict]:
+        rpc_url = self.rpc_urls.get(chain)
+        wallets = self.wallets.get(chain, {})
+        token_defs = self.tokens.get(chain, {})
+        chain_wallets: Dict[str, Dict] = {}
+
+        if not rpc_url or not wallets:
+            return chain, chain_data
+
+        contract_addresses = {
+            symbol: token.get("address")
+            for symbol, token in token_defs.items()
+            if token.get("address")
+        }
+        decimals_map = {
+            symbol: token.get("decimals", 18) for symbol, token in token_defs.items()
         }
 
-        async with httpx.AsyncClient(timeout=self.rpc_timeout) as client:
-            chain_data: Dict[str, Any] = {"wallets": {}}
+        async with httpx.AsyncClient(timeout=self.timeout) as session:
             for label, address in wallets.items():
-                addr = address.lower()
-                balances = await self._fetch_wallet_tokens(
-                    client, rpc_url, addr, tokens
-                )
-                chain_data["wallets"][label] = {
+                lower_address = address.lower()
+                balances: Dict[str, float] = {}
+
+                # Native balance (if token definition is missing address)
+                for symbol, token in token_defs.items():
+                    if not token.get("address"):
+                        value = await self._eth_get_balance(
+                            session,
+                            rpc_url,
+                            lower_address,
+                            token.get("decimals", 18),
+                        )
+                        balances[symbol] = value
+
+                # Fetch ERC-20 balances in a single call
+                if contract_addresses:
+                    amounts = await self._eth_get_token_balances(
+                        session, rpc_url, lower_address, contract_addresses
+                    )
+                    for symbol, hex_value in amounts.items():
+                        balances[symbol] = self._from_hex(
+                            hex_value, decimals_map.get(symbol, 18)
+                        )
+
+                chain_wallets[label] = {
                     "address": address,
                     "balances": balances,
                 }
 
-        return {"name": chain_name, "data": chain_data}
+        return chain, {"wallets": chain_wallets}
 
-    async def _fetch_wallet_tokens(
+    async def _eth_get_balance(
         self,
-        client: httpx.AsyncClient,
+        session: httpx.AsyncClient,
         rpc_url: str,
-        wallet_address: str,
-        tokens: Dict[str, TokenConfig],
-    ) -> Dict[str, float]:
-        results: Dict[str, float] = {}
-        tasks = []
-        for symbol, token_cfg in tokens.items():
-            if token_cfg.native:
-                tasks.append(
-                    asyncio.create_task(
-                        self._fetch_native_balance(
-                            client, rpc_url, wallet_address, token_cfg
-                        )
-                    )
-                )
-            else:
-                tasks.append(
-                    asyncio.create_task(
-                        self._fetch_erc20_balance(
-                            client, rpc_url, wallet_address, token_cfg
-                        )
-                    )
-                )
-
-        balances = await asyncio.gather(*tasks)
-        for symbol, amount in balances:
-            results[symbol] = amount
-        return results
-
-    async def _rpc_call(
-        self,
-        client: httpx.AsyncClient,
-        rpc_url: str,
-        method: str,
-        params: List[Any],
-    ) -> Any:
+        address: str,
+        decimals: int,
+    ) -> float:
         payload = {
             "jsonrpc": "2.0",
+            "method": "eth_getBalance",
+            "params": [address, "latest"],
             "id": 1,
-            "method": method,
-            "params": params,
         }
-        response = await client.post(rpc_url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        if "error" in data:
-            raise RuntimeError(data["error"])
-        return data.get("result")
+        resp = await session.post(rpc_url, json=payload)
+        resp.raise_for_status()
+        value = resp.json().get("result", "0x0")
+        return self._from_hex(value, decimals)
 
-    async def _fetch_native_balance(
+    async def _eth_get_token_balances(
         self,
-        client: httpx.AsyncClient,
+        session: httpx.AsyncClient,
         rpc_url: str,
-        wallet_address: str,
-        token_cfg: TokenConfig,
-    ) -> Tuple[str, float]:
-        result = await self._rpc_call(
-            client, rpc_url, "eth_getBalance", [wallet_address, "latest"]
-        )
-        amount = self._normalize_hex_value(result, token_cfg.decimals)
-        return token_cfg.symbol, amount
-
-    async def _fetch_erc20_balance(
-        self,
-        client: httpx.AsyncClient,
-        rpc_url: str,
-        wallet_address: str,
-        token_cfg: TokenConfig,
-    ) -> Tuple[str, float]:
-        if not token_cfg.address:
-            return token_cfg.symbol, 0.0
-        data = (
-            f"{BALANCE_OF_SELECTOR}"
-            f"{'0' * 24}{wallet_address.removeprefix('0x')}"
-        )
+        address: str,
+        contract_map: Dict[str, str],
+    ) -> Dict[str, str]:
         payload = {
-            "to": token_cfg.address,
-            "data": data,
+            "jsonrpc": "2.0",
+            "method": "alchemy_getTokenBalances",
+            "params": [address, list(contract_map.values())],
+            "id": 1,
         }
-        result = await self._rpc_call(
-            client, rpc_url, "eth_call", [payload, "latest"]
-        )
-        amount = self._normalize_hex_value(result, token_cfg.decimals)
-        return token_cfg.symbol, amount
+        resp = await session.post(rpc_url, json=payload)
+        resp.raise_for_status()
+        token_balances = resp.json().get("result", {}).get("tokenBalances", [])
+        result: Dict[str, str] = {}
+        for entry in token_balances:
+            contract = entry.get("contractAddress")
+            for symbol, addr in contract_map.items():
+                if addr.lower() == (contract or "").lower():
+                    result[symbol] = entry.get("tokenBalance", "0x0")
+        return result
 
-    def _normalize_hex_value(self, value: Any, decimals: int) -> float:
+    async def _fetch_solana_chain(self) -> Tuple[str, Dict]:
+        rpc_url = self.rpc_urls.get("solana")
+        wallets = self.wallets.get("solana", {})
+        tokens = self.tokens.get("solana", {})
+        chain_wallets: Dict[str, Dict] = {}
+
+        if not rpc_url or not wallets:
+            return "solana", chain_data
+
+        async with httpx.AsyncClient(timeout=self.timeout) as session:
+            for label, owner in wallets.items():
+                balances: Dict[str, float] = {}
+
+                native_token = tokens.get("SOL") or tokens.get("native")
+                if native_token:
+                    balances["SOL"] = await self._sol_get_balance(
+                        session, rpc_url, owner, native_token.get("decimals", 9)
+                    )
+
+                for symbol, token in tokens.items():
+                    account_map = token.get("account_map")
+                    if not account_map:
+                        continue
+
+                    account_address = account_map.get(label)
+                    if not account_address:
+                        balances[symbol] = 0.0
+                        continue
+
+                    amount = await self._sol_get_token_balance(
+                        session,
+                        rpc_url,
+                        account_address,
+                        token.get("decimals", 9),
+                    )
+                    balances[symbol] = amount
+
+                chain_wallets[label] = {
+                    "address": owner,
+                    "balances": balances,
+                }
+
+        return "solana", {"wallets": chain_wallets}
+
+    async def _sol_get_balance(
+        self,
+        session: httpx.AsyncClient,
+        rpc_url: str,
+        owner: str,
+        decimals: int,
+    ) -> float:
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "getBalance",
+            "params": [owner],
+            "id": 1,
+        }
+        resp = await session.post(rpc_url, json=payload)
+        resp.raise_for_status()
+        value = resp.json().get("result", {}).get("value", 0)
+        divisor = 10 ** decimals
+        return value / divisor if divisor else float(value)
+
+    async def _sol_get_token_balance(
+        self,
+        session: httpx.AsyncClient,
+        rpc_url: str,
+        token_account: str,
+        decimals: int,
+    ) -> float:
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "getTokenAccountBalance",
+            "params": [token_account],
+            "id": 1,
+        }
+        resp = await session.post(rpc_url, json=payload)
+        resp.raise_for_status()
+        value = resp.json().get("result", {}).get("value", {})
+        ui_amount = value.get("uiAmount")
+        if ui_amount is not None:
+            return float(ui_amount)
+        amount_str = value.get("amount")
+        if amount_str is None:
+            return 0.0
+        divisor = 10 ** decimals
+        return int(amount_str) / divisor if divisor else float(amount_str)
+
+    def _from_hex(self, value: str, decimals: int) -> float:
         if not value:
             return 0.0
         try:
             integer = int(value, 16)
         except ValueError:
-            integer = 0
-        scaled = Decimal(integer) / (Decimal(10) ** decimals)
-        return float(scaled)
-
-    async def _fetch_solana_chain(self) -> Optional[Dict[str, Any]]:
-        rpc_url = self.solana_config.get("rpc_url")
-        if not rpc_url:
-            return None
-
-        wallets: Dict[str, str] = self.solana_config.get("wallets", {})
-        tokens_cfg: Dict[str, Any] = self.solana_config.get("tokens", {})
-        tokens = {
-            symbol: TokenConfig(
-                symbol=symbol,
-                decimals=int(cfg.get("decimals", 9)),
-                native=cfg.get("native", False),
-                price_symbol=cfg.get("price_symbol", symbol),
-                price_id=cfg.get("price_id"),
-                fixed_price=cfg.get("fixed_price"),
-                spl_mint=cfg.get("mint"),
-            )
-            for symbol, cfg in tokens_cfg.items()
-        }
-
-        chain_data: Dict[str, Any] = {"wallets": {}}
-        client = AsyncClient(rpc_url, timeout=self.rpc_timeout)
-        try:
-            for label, address in wallets.items():
-                wallet_key = PublicKey(address)
-                balances: Dict[str, float] = {}
-                for symbol, token_cfg in tokens.items():
-                    if token_cfg.native:
-                        resp = await client.get_balance(wallet_key)
-                        lamports = resp.value if resp.value else 0
-                        amount = (
-                            Decimal(lamports)
-                            / (Decimal(10) ** token_cfg.decimals)
-                        )
-                    else:
-                        amount = await self._fetch_spl_balance(
-                            client, wallet_key, token_cfg
-                        )
-                    balances[symbol] = float(amount)
-
-                chain_data["wallets"][label] = {
-                    "address": address,
-                    "balances": balances,
-                }
-        finally:
-            await client.close()
-
-        return {"name": "solana", "data": chain_data}
-
-    async def _fetch_spl_balance(
-        self,
-        client: AsyncClient,
-        owner: PublicKey,
-        token_cfg: TokenConfig,
-    ) -> Decimal:
-        if not token_cfg.spl_mint:
-            return Decimal(0)
-        mint = PublicKey(token_cfg.spl_mint)
-        resp = await client.get_token_accounts_by_owner(owner, mint=mint)
-        total_amount = 0
-        for entry in resp.value or []:
-            parsed_data = entry.account.data.parsed
-            token_amount = parsed_data["info"]["tokenAmount"]["amount"]
-            total_amount += int(token_amount)
-        return Decimal(total_amount) / (Decimal(10) ** token_cfg.decimals)
-
-    async def _build_price_map(self) -> Dict[str, float]:
-        """Fetch USD prices for all configured assets."""
-        prices: Dict[str, float] = {}
-        if self.price_symbols:
-            fetched = await self.price_service.get_prices(self.price_symbols)
-            prices.update(fetched)
-
-        prices.update(self.fixed_price_symbols)
-        return prices
+            return 0.0
+        divisor = 10 ** decimals
+        return integer / divisor if divisor else float(integer)
 

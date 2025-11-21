@@ -40,9 +40,9 @@ security = HTTPBearer()
 AUTH_TOKEN = config.get('api.auth_token', 'your-secret-token-here')
 
 # Initialize services
-exchange_service = ExchangeService()
 price_service = PriceService()
-dex_balance_service = DexBalanceService()
+dex_balance_service = DexBalanceService(price_service)
+exchange_service = ExchangeService()
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> str:
@@ -210,18 +210,18 @@ async def get_balances_summary(token: str = Depends(verify_token)):
 
 @app.get("/api/dex/balances", response_model=DexBalancesResponse, tags=["Balances"])
 async def get_dex_balances(token: str = Depends(verify_token)):
-    """Fetch on-chain balances for the DEX arbitrage ledger."""
+    """Fetch on-chain DEX balances (EVM + Solana) via Alchemy APIs."""
     try:
         data = await dex_balance_service.fetch_all_balances()
         return DexBalancesResponse(
             success=True,
             chains=data.get("chains", {}),
             prices=data.get("prices", {}),
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=data.get("timestamp"),
         )
     except Exception as exc:
         logger.error(f"Error fetching DEX balances: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to fetch DEX balances")
 
 if __name__ == "__main__":
     import uvicorn

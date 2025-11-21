@@ -49,20 +49,19 @@ class HealthResponse(BaseModel):
 
 
 class DexWalletBalances(BaseModel):
-    """On-chain wallet balances for DEX sheet."""
-    address: str = Field(..., description="Wallet address or public key")
-    balances: Dict[str, float] = Field(..., description="Asset balances in human units")
+    """On-chain wallet balances for arbitrage sheet."""
+    address: str = Field(..., description="Wallet address/public key")
+    balances: Dict[str, float] = Field(..., description="Asset balances")
 
 
 class DexChainBalances(BaseModel):
-    """Chain level balances."""
-    wallets: Dict[str, DexWalletBalances] = Field(..., description="Wallet balances keyed by label")
+    wallets: Dict[str, DexWalletBalances] = Field(..., description="Balances keyed by wallet label")
 
 
 class DexBalancesResponse(BaseModel):
-    """Response for on-chain DEX balances."""
     success: bool = Field(..., description="Whether the request was successful")
     chains: Dict[str, DexChainBalances] = Field(..., description="Balances grouped by chain")
-    prices: Dict[str, float] = Field(..., description="USD prices keyed by asset symbol")
-    timestamp: str = Field(..., description="Timestamp of the response")
+    prices: Dict[str, float] = Field(default_factory=dict, description="USD prices for sheet calculations")
+    timestamp: str = Field(..., description="Fetch timestamp")
+
 

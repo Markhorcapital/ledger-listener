@@ -29,6 +29,12 @@ class PriceService:
         self.vs_currency: str = cg_config.get("vs_currency", "usd")
         self.timeout: float = float(cg_config.get("timeout", 5))
         self.asset_symbol: str = cg_config.get("asset_symbol", "ALI").upper()
+        raw_price_ids = (cg_config.get("dex_price_ids") or {})
+        self.dex_price_ids: Dict[str, str] = {
+            str(symbol).upper(): str(price_id)
+            for symbol, price_id in raw_price_ids.items()
+            if price_id
+        }
 
     async def get_ali_price(self) -> Optional[Dict[str, Any]]:
         """Fetch the ALI token price in USD from CoinGecko Pro API."""
@@ -131,3 +137,9 @@ class PriceService:
             if price_entry and self.vs_currency in price_entry:
                 prices[symbol] = float(price_entry[self.vs_currency])
         return prices
+
+    async def get_dex_prices(self) -> Dict[str, float]:
+        """Fetch USD prices for assets needed by the DEX ledger sheet."""
+        if not self.dex_price_ids:
+            return {}
+        return await self.get_prices(self.dex_price_ids)

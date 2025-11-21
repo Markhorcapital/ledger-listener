@@ -84,6 +84,7 @@ function updateDexBalances() {
   sheet.getRange(newRow, 1).setValue(dateString);
 
   const allTotals = initAllTotals();
+  const priceMap = normalizePrices(apiData.prices || {});
 
   DEX_CONFIG.CHAIN_SECTIONS.forEach(function(section) {
     const chainData = (apiData.chains && apiData.chains[section.apiKey]) || { wallets: {} };
@@ -113,8 +114,8 @@ function updateDexBalances() {
   });
 
   writeAllSection(sheet, newRow, allTotals);
-  writePriceSection(sheet, newRow, apiData.prices || {});
-  writeCumulativeAndComments(sheet, newRow, allTotals, apiData.prices || {});
+  writePriceSection(sheet, newRow, priceMap);
+  writeCumulativeAndComments(sheet, newRow, allTotals, priceMap);
 
   Logger.log('DEX balance update completed successfully');
 }
@@ -156,47 +157,53 @@ function writeAllSection(sheet, rowIndex, allTotals) {
 }
 
 function writePriceSection(sheet, rowIndex, prices) {
+  const aliPrice = prices.ALI || 0;
+  const ethPrice = prices.ETH || 0;
+  const polPrice = prices.POL || 0;
+  const solPrice = prices.SOL || 0;
+
   const aliCell = sheet.getRange(rowIndex, DEX_CONFIG.PRICE_SECTION.ALI);
-  aliCell.setValue(toNumber(prices.ALI));
+  aliCell.setValue(aliPrice);
   aliCell.setNumberFormat('0.00000000');
 
   const ethCell = sheet.getRange(rowIndex, DEX_CONFIG.PRICE_SECTION.ETH);
-  ethCell.setValue(toNumber(prices.ETH));
+  ethCell.setValue(ethPrice);
   ethCell.setNumberFormat('0.00');
 
   const polCell = sheet.getRange(rowIndex, DEX_CONFIG.PRICE_SECTION.POL);
-  polCell.setValue(toNumber(prices.POL));
+  polCell.setValue(polPrice);
   polCell.setNumberFormat('0.0000');
 
   const solCell = sheet.getRange(rowIndex, DEX_CONFIG.PRICE_SECTION.SOL);
-  solCell.setValue(toNumber(prices.SOL));
+  solCell.setValue(solPrice);
   solCell.setNumberFormat('0.00');
 }
 
 function writeCumulativeAndComments(sheet, rowIndex, totals, prices) {
-  const aliPrice = toNumber(prices.ALI);
-  const ethPrice = toNumber(prices.ETH);
-  const polPrice = toNumber(prices.POL);
-  const solPrice = toNumber(prices.SOL);
+  const aliPrice = prices.ALI || 0;
+  const ethPrice = prices.ETH || 0;
+  const polPrice = prices.POL || 0;
+  const solPrice = prices.SOL || 0;
 
-  const aliUsdValuation = (totals.ALI || 0) * aliPrice;
-  const quoteUsd =
-    (totals.USDC || 0) +
-    ((totals.WETH || 0) + (totals.ETH || 0)) * ethPrice +
-    (totals.WPOL || 0) * polPrice +
-    (totals.POL || 0) * polPrice +
-    (totals.SOL || 0) * solPrice;
+  const aliUsd = (totals.ALI || 0) * aliPrice;
+  const usdcUsd = totals.USDC || 0;
+  const wethUsd = (totals.WETH || 0) * ethPrice;
+  const wpolUsd = (totals.WPOL || 0) * polPrice;
+  const ethUsd = (totals.ETH || 0) * ethPrice;
+  const solUsd = (totals.SOL || 0) * solPrice;
+  const polUsd = (totals.POL || 0) * polPrice;
 
-  const cumulativeUsd = aliUsdValuation + quoteUsd;
+  const cumulativeUsd = aliUsd + usdcUsd + wethUsd + wpolUsd + ethUsd + solUsd + polUsd;
   const cumulativeCell = sheet.getRange(rowIndex, DEX_CONFIG.CUMULATIVE_USD_COL);
   cumulativeCell.setValue(cumulativeUsd);
   cumulativeCell.setNumberFormat('0.00');
 
+  const quoteUsd = usdcUsd + wethUsd + wpolUsd + ethUsd + solUsd + polUsd;
   let comment = '';
   if (cumulativeUsd > 0) {
-    if (quoteUsd > aliUsdValuation) {
+    if (quoteUsd > aliUsd) {
       comment = 'Scewed towards USDT';
-    } else if (quoteUsd < aliUsdValuation) {
+    } else if (quoteUsd < aliUsd) {
       comment = 'Scewed towards ALI';
     } else {
       comment = 'Balanced';
@@ -211,5 +218,16 @@ function toNumber(value) {
   }
   const parsed = parseFloat(value);
   return isNaN(parsed) ? 0 : parsed;
+}
+
+function normalizePrices(prices) {
+  const normalized = {};
+  if (!prices) {
+    return normalized;
+  }
+  Object.keys(prices).forEach(function(key) {
+    normalized[key.toUpperCase()] = toNumber(prices[key]);
+  });
+  return normalized;
 }
 
