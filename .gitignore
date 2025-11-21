@@ -51,3 +51,6 @@ markhor.cexaccounts.json
 # Documentation (optional, can be removed if you want to commit these)
 # CLAUDE.md
 # README.md
+
+# Google Apps Script backups
+google-apps-script/previous.gs
