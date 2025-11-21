@@ -20,6 +20,14 @@ class AccountBalance(BaseModel):
     timestamp: str = Field(..., description="Fetch timestamp")
 
 
+class PricingInfo(BaseModel):
+    """Token pricing information (USD)."""
+    asset: str = Field(..., description="Asset symbol (e.g., ALI)")
+    price_usd: float = Field(..., description="Spot price in USD")
+    source: str = Field(..., description="Pricing data source")
+    timestamp: str = Field(..., description="Price fetch timestamp")
+
+
 class AllBalancesResponse(BaseModel):
     """Response containing all account balances"""
     success: bool = Field(..., description="Whether the request was successful")
@@ -28,6 +36,9 @@ class AllBalancesResponse(BaseModel):
     successful_fetches: int = Field(..., description="Number of successful fetches")
     failed_fetches: int = Field(..., description="Number of failed fetches")
     timestamp: str = Field(..., description="Response timestamp")
+    pricing: Optional[PricingInfo] = Field(
+        None, description="Optional pricing information for assets"
+    )
 
 
 class HealthResponse(BaseModel):

@@ -80,7 +80,15 @@ const CONFIG = {
       ],
       quoteAsset: 'USD'  // Crypto.com uses USD, not USDT
     }
-  ]
+  ],
+  // Cumulative totals columns (ALI + quote across all exchanges)
+  CUMULATIVE: {
+    aliCol: 44,              // Column AR (sum of Gate, MEXC, HTX, Crypto ALI totals)
+    quoteCol: 45,            // Column AS (sum of Gate, MEXC, HTX USDT totals + Crypto USD)
+    aliUsdValCol: 46,        // Column AT - ALI USD Valuation
+    cumulativeUsdValCol: 47, // Column AU - Cumulative USD Valuation
+    priceCol: 50             // Column AX - ALI/USD price from CoinGecko
+  }
 };
 
 // ==================== MAIN FUNCTION ====================
@@ -156,10 +164,14 @@ function updateSheet(balanceData) {
 
   // Get previous non-empty row data for carrying forward balances
   // Need to loop backwards to find last row with actual data (skip weekends/empty rows)
-  const maxCol = 50; // Max column we care about
+  const maxCol = 50; // Max column we care about (up to PRICE column)
   const previousRowData = getPreviousNonEmptyRowData(sheet, lastRow, maxCol);
+  const cumulativeConfig = CONFIG.CUMULATIVE || {};
 
   // Process each exchange
+  let cumulativeAli = 0;
+  let cumulativeQuote = 0;
+
   CONFIG.EXCHANGES.forEach(function(exchangeConfig) {
     const exchangeName = exchangeConfig.name;
     const quoteAsset = exchangeConfig.quoteAsset;
@@ -174,6 +186,8 @@ function updateSheet(balanceData) {
         sheet.getRange(newRow, accountConfig.aliCol).setValue(totalAli);
         sheet.getRange(newRow, accountConfig.quoteCol).setValue(totalQuote);
         Logger.log(exchangeName + ' Total - ALI: ' + totalAli + ' | ' + quoteAsset + ': ' + totalQuote);
+        cumulativeAli += totalAli;
+        cumulativeQuote += totalQuote;
       } else if (accountConfig.hasApiKey) {
         // This account has API key - fetch from API
         const key = makeBalanceKey(exchangeName, accountConfig.name);
@@ -198,19 +212,55 @@ function updateSheet(balanceData) {
         
       } else {
         // This account has no API key - carry forward from previous row
-        const prevAli = previousRowData[accountConfig.aliCol - 1] || 0;
-        const prevQuote = previousRowData[accountConfig.quoteCol - 1] || 0;
+        const prevAli = parseNumericValue(previousRowData[accountConfig.aliCol - 1]);
+        const prevQuote = parseNumericValue(previousRowData[accountConfig.quoteCol - 1]);
         
         sheet.getRange(newRow, accountConfig.aliCol).setValue(prevAli);
         sheet.getRange(newRow, accountConfig.quoteCol).setValue(prevQuote);
         
-        totalAli += parseFloat(prevAli) || 0;
-        totalQuote += parseFloat(prevQuote) || 0;
+        totalAli += prevAli;
+        totalQuote += prevQuote;
         
         Logger.log(exchangeName + ':' + accountConfig.name + ' (Carried) - ALI: ' + prevAli + ' | ' + quoteAsset + ': ' + prevQuote);
       }
     });
   });
+
+  // Write cumulative totals if configured
+  if (cumulativeConfig.aliCol) {
+    sheet.getRange(newRow, cumulativeConfig.aliCol).setValue(cumulativeAli);
+  }
+  if (cumulativeConfig.quoteCol) {
+    sheet.getRange(newRow, cumulativeConfig.quoteCol).setValue(cumulativeQuote);
+  }
+
+  // Fetch ALI price from API response (fallback to previous row value)
+  let aliPriceFromApi = null;
+  if (balanceData && balanceData.pricing && balanceData.pricing.price_usd !== undefined) {
+    aliPriceFromApi = Number(balanceData.pricing.price_usd);
+  }
+  const previousPriceValue = cumulativeConfig.priceCol
+    ? parseNumericValue(previousRowData[cumulativeConfig.priceCol - 1])
+    : 0;
+  let aliPrice = !isNaN(aliPriceFromApi) && aliPriceFromApi !== null ? aliPriceFromApi : previousPriceValue;
+  if (!isFinite(aliPrice)) {
+    aliPrice = 0;
+  }
+
+  if (cumulativeConfig.priceCol) {
+    sheet.getRange(newRow, cumulativeConfig.priceCol).setValue(aliPrice);
+  }
+
+  // Calculate ALI USD valuation and cumulative USD valuation
+  const aliUsdValuation = cumulativeAli * aliPrice;
+  if (cumulativeConfig.aliUsdValCol) {
+    sheet.getRange(newRow, cumulativeConfig.aliUsdValCol).setValue(aliUsdValuation);
+  }
+
+  const cumulativeUsdValuation = aliUsdValuation + cumulativeQuote;
+  if (cumulativeConfig.cumulativeUsdValCol) {
+    sheet.getRange(newRow, cumulativeConfig.cumulativeUsdValCol).setValue(cumulativeUsdValuation);
+  }
 
   Logger.log('Added new row ' + newRow + ' (' + dateString + ') in sheet "' + CONFIG.SHEET_NAME + '"');
 }
@@ -220,14 +270,21 @@ function buildBalanceIndex(accounts) {
   const index = {};
   accounts.forEach(function(account) {
     const key = makeBalanceKey(account.exchange, account.account_name);
-    index[key] = account;
+    if (key) {
+      index[key] = account;
+    }
   });
   return index;
 }
 
-// Create consistent key for balance lookup
+// Create consistent key for balance lookup (case-insensitive, trimmed)
 function makeBalanceKey(exchange, accountName) {
-  return exchange + '::' + accountName;
+  if (!exchange || !accountName) {
+    return '';
+  }
+  const normalizedExchange = exchange.toString().trim().toLowerCase();
+  const normalizedAccount = accountName.toString().trim().toLowerCase();
+  return normalizedExchange + '::' + normalizedAccount;
 }
 
 // Get total balance for a currency from balance map
@@ -237,6 +294,16 @@ function getCurrencyTotal(balanceMap, symbol) {
   }
   const currencyInfo = balanceMap[symbol];
   return currencyInfo.total !== undefined ? currencyInfo.total : 0;
+}
+
+// Parse numeric values from sheet cells (handles commas)
+function parseNumericValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return 0;
+  }
+  const cleaned = String(value).replace(/,/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
 }
 
 // Get previous non-empty row data, searching backwards through empty rows

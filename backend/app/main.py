@@ -9,7 +9,7 @@ import logging
 from app.config import config
 from app.database import db
 from app.models import AllBalancesResponse, HealthResponse
-from app.services import ExchangeService
+from app.services import ExchangeService, PriceService
 
 # Configure logging - get level from config
 log_level = config.get('service.log_level', 'info').upper()
@@ -41,6 +41,7 @@ AUTH_TOKEN = config.get('api.auth_token', 'your-secret-token-here')
 
 # Initialize services
 exchange_service = ExchangeService()
+price_service = PriceService()
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> str:
@@ -125,6 +126,9 @@ async def get_all_balances(token: str = Depends(verify_token)):
         
         # Fetch balances from all exchanges
         account_balances = await exchange_service.fetch_all_balances(accounts)
+
+        # Fetch ALI price (optional, non-blocking failure)
+        pricing_info = await price_service.get_ali_price()
         
         # Count successes and failures
         successful = sum(1 for ab in account_balances if ab.error is None)
@@ -138,7 +142,8 @@ async def get_all_balances(token: str = Depends(verify_token)):
             total_accounts=len(accounts),
             successful_fetches=successful,
             failed_fetches=failed,
-            timestamp=datetime.utcnow().isoformat() + 'Z'
+            timestamp=datetime.utcnow().isoformat() + 'Z',
+            pricing=pricing_info,
         )
         
     except HTTPException:

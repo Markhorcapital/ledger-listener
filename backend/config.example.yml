@@ -40,3 +40,14 @@ exchanges:
     MEXC: mexc
     Crypto_com: cryptocom
 
+# Pricing / Market Data Configuration
+pricing:
+  coingecko:
+    enabled: false
+    base_url: "https://pro-api.coingecko.com/api/v3"
+    api_key: "YOUR-COINGECKO-PRO-API-KEY"
+    contract_address: "0x6b0b3a982b4634ac68dd83a4dbf02311ce324181"
+    vs_currency: "usd"
+    timeout: 5
+    asset_symbol: "ALI"
+
