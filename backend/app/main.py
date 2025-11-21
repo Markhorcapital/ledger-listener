@@ -8,8 +8,8 @@ import logging
 
 from app.config import config
 from app.database import db
-from app.models import AllBalancesResponse, HealthResponse
-from app.services import ExchangeService, PriceService
+from app.models import AllBalancesResponse, DexBalancesResponse, HealthResponse
+from app.services import DexBalanceService, ExchangeService, PriceService
 
 # Configure logging - get level from config
 log_level = config.get('service.log_level', 'info').upper()
@@ -42,6 +42,7 @@ AUTH_TOKEN = config.get('api.auth_token', 'your-secret-token-here')
 # Initialize services
 exchange_service = ExchangeService()
 price_service = PriceService()
+dex_balance_service = DexBalanceService()
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> str:
@@ -206,6 +207,21 @@ async def get_balances_summary(token: str = Depends(verify_token)):
         logger.error(f"Error generating summary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/dex/balances", response_model=DexBalancesResponse, tags=["Balances"])
+async def get_dex_balances(token: str = Depends(verify_token)):
+    """Fetch on-chain balances for the DEX arbitrage ledger."""
+    try:
+        data = await dex_balance_service.fetch_all_balances()
+        return DexBalancesResponse(
+            success=True,
+            chains=data.get("chains", {}),
+            prices=data.get("prices", {}),
+            timestamp=datetime.utcnow().isoformat() + "Z",
+        )
+    except Exception as exc:
+        logger.error(f"Error fetching DEX balances: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 if __name__ == "__main__":
     import uvicorn

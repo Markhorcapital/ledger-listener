@@ -47,3 +47,22 @@ class HealthResponse(BaseModel):
     database: str = Field(..., description="Database connection status")
     timestamp: str = Field(..., description="Check timestamp")
 
+
+class DexWalletBalances(BaseModel):
+    """On-chain wallet balances for DEX sheet."""
+    address: str = Field(..., description="Wallet address or public key")
+    balances: Dict[str, float] = Field(..., description="Asset balances in human units")
+
+
+class DexChainBalances(BaseModel):
+    """Chain level balances."""
+    wallets: Dict[str, DexWalletBalances] = Field(..., description="Wallet balances keyed by label")
+
+
+class DexBalancesResponse(BaseModel):
+    """Response for on-chain DEX balances."""
+    success: bool = Field(..., description="Whether the request was successful")
+    chains: Dict[str, DexChainBalances] = Field(..., description="Balances grouped by chain")
+    prices: Dict[str, float] = Field(..., description="USD prices keyed by asset symbol")
+    timestamp: str = Field(..., description="Timestamp of the response")
+

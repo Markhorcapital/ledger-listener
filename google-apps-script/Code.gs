@@ -87,6 +87,8 @@ const CONFIG = {
     quoteCol: 45,            // Column AS (sum of Gate, MEXC, HTX USDT totals + Crypto USD)
     aliUsdValCol: 46,        // Column AT - ALI USD Valuation
     cumulativeUsdValCol: 47, // Column AU - Cumulative USD Valuation
+    imbalanceCol: 48,        // Column AV - Imbalance %
+    commentsCol: 49,         // Column AW - Comments based on imbalance
     priceCol: 50             // Column AX - ALI/USD price from CoinGecko
   }
 };
@@ -248,18 +250,51 @@ function updateSheet(balanceData) {
   }
 
   if (cumulativeConfig.priceCol) {
-    sheet.getRange(newRow, cumulativeConfig.priceCol).setValue(aliPrice);
+    const priceCell = sheet.getRange(newRow, cumulativeConfig.priceCol);
+    priceCell.setValue(aliPrice);
+    priceCell.setNumberFormat('0.00000000'); // show full precision (8 decimals)
   }
 
   // Calculate ALI USD valuation and cumulative USD valuation
   const aliUsdValuation = cumulativeAli * aliPrice;
   if (cumulativeConfig.aliUsdValCol) {
-    sheet.getRange(newRow, cumulativeConfig.aliUsdValCol).setValue(aliUsdValuation);
+    const valuationCell = sheet.getRange(newRow, cumulativeConfig.aliUsdValCol);
+    valuationCell.setValue(aliUsdValuation);
+    valuationCell.setNumberFormat('0.00');
   }
 
   const cumulativeUsdValuation = aliUsdValuation + cumulativeQuote;
   if (cumulativeConfig.cumulativeUsdValCol) {
-    sheet.getRange(newRow, cumulativeConfig.cumulativeUsdValCol).setValue(cumulativeUsdValuation);
+    const cumulativeCell = sheet.getRange(newRow, cumulativeConfig.cumulativeUsdValCol);
+    cumulativeCell.setValue(cumulativeUsdValuation);
+    cumulativeCell.setNumberFormat('0.00');
+  }
+
+  // Imbalance % measures deviation from a 50/50 ALI-vs-Quote USD allocation
+  let imbalancePercent = 0;
+  if (cumulativeUsdValuation > 0) {
+    const quotePercentage = (cumulativeQuote / cumulativeUsdValuation) * 100;
+    imbalancePercent = Math.abs(quotePercentage - 50) * 2;
+  }
+  if (cumulativeConfig.imbalanceCol) {
+    const imbalanceCell = sheet.getRange(newRow, cumulativeConfig.imbalanceCol);
+    imbalanceCell.setValue(imbalancePercent);
+    imbalanceCell.setNumberFormat('0.00');
+  }
+
+  // Comments describe which side of the portfolio dominates (based on USD value)
+  let imbalanceComment = '';
+  if (cumulativeUsdValuation > 0) {
+    if (cumulativeQuote > aliUsdValuation) {
+      imbalanceComment = 'Scewed towards USDT';
+    } else if (cumulativeQuote < aliUsdValuation) {
+      imbalanceComment = 'Scewed towards ALI';
+    } else {
+      imbalanceComment = 'Balanced';
+    }
+  }
+  if (cumulativeConfig.commentsCol) {
+    sheet.getRange(newRow, cumulativeConfig.commentsCol).setValue(imbalanceComment);
   }
 
   Logger.log('Added new row ' + newRow + ' (' + dateString + ') in sheet "' + CONFIG.SHEET_NAME + '"');

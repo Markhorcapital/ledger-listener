@@ -92,3 +92,42 @@ class PriceService:
             logger.error("Failed to fetch ALI price from CoinGecko: %s", str(exc))
             return None
 
+
+    async def get_prices(self, symbol_to_id: Dict[str, str]) -> Dict[str, float]:
+        """Fetch USD prices for arbitrary CoinGecko IDs."""
+        if not symbol_to_id:
+            return {}
+
+        if not self.enabled:
+            logger.debug("Price service disabled; returning empty price map")
+            return {}
+
+        if not self.api_key:
+            logger.warning(
+                "CoinGecko API key not configured; cannot fetch additional prices"
+            )
+            return {}
+
+        endpoint = f"{self.base_url.rstrip('/')}/simple/price"
+        ids_value = ",".join(sorted(set(symbol_to_id.values())))
+        params = {
+            "ids": ids_value,
+            "vs_currencies": self.vs_currency,
+        }
+        headers = {"x-cg-pro-api-key": self.api_key}
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(endpoint, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPError as exc:
+            logger.error("Failed to fetch prices from CoinGecko: %s", str(exc))
+            return {}
+
+        prices: Dict[str, float] = {}
+        for symbol, price_id in symbol_to_id.items():
+            price_entry = data.get(price_id)
+            if price_entry and self.vs_currency in price_entry:
+                prices[symbol] = float(price_entry[self.vs_currency])
+        return prices

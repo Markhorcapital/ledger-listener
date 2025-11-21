@@ -14,9 +14,14 @@ FastAPI service to fetch balances from Gate.io, HTX, MEXC, and Crypto.com. Reads
   - `totals.by_exchange`: aggregated totals per exchange (e.g., overall ALI holdings on Gate.io)
   - `totals.overall`: network-wide totals per currency (ALI, USDT, USD…)
   - `pricing`: same ALI quote block as `/api/balances`
+- `GET /api/dex/balances` - On-chain balances for the DEX ledger (requires auth). Returns:
+  - `chains`: balances grouped by chain (ethereum/base/polygon/solana) → wallet label → asset
+  - `prices`: USD price map for ALI/ETH/POL/SOL (and any stablecoins with fixed price)
 - `GET /docs` - Swagger UI documentation
 
 ## Google Apps Script Setup
+
+### CEX Ledger
 
 See `google-apps-script/Code.gs` for the complete script.
 
@@ -30,6 +35,14 @@ See `google-apps-script/Code.gs` for the complete script.
      - Cumulative ALI / USDT (columns AR & AS)
      - ALI/USD price from `/api/balances.pricing` (column AX)
      - ALI USD valuation + total USD valuation columns (AT & AU) using the live price
+
+### DEX Ledger
+
+- Copy `google-apps-script/DEXCode.gs` into a separate Apps Script project (or another tab in the same sheet).
+- Update `DEX_CONFIG` with your API URL/token if they differ.
+- Run `updateDexBalances()` manually to add a new row to `DEX-ARB-Ledger`.
+  - The script maps each EVM/Solana wallet to the corresponding ALI/USDC/WETH/WPOL/SOL columns in the sheet.
+  - Totals, ALL section, price columns (ALI/ETH/POL/SOL), USD valuation, and Comments are computed automatically using `/api/dex/balances` output.
 
 ## Configuration
 
