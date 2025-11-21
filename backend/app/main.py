@@ -167,23 +167,38 @@ async def get_balances_summary(token: str = Depends(verify_token)):
         
         # Create summary grouped by exchange
         summary: Dict[str, Dict[str, Dict[str, float]]] = {}
+        exchange_totals: Dict[str, Dict[str, float]] = {}
+        overall_totals: Dict[str, float] = {}
         
         for account in full_response.accounts:
             exchange = account.exchange
             if exchange not in summary:
                 summary[exchange] = {}
+            if exchange not in exchange_totals:
+                exchange_totals[exchange] = {}
             
-            summary[exchange][account.account_name] = {
-                currency: {
-                    "total": balance.total,
-                    "free": balance.free
+            summary[exchange][account.account_name] = {}
+            
+            for currency, balance in account.balances.items():
+                total_value = float(balance.total or 0.0)
+                free_value = float(balance.free or 0.0)
+                
+                summary[exchange][account.account_name][currency] = {
+                    "total": total_value,
+                    "free": free_value
                 }
-                for currency, balance in account.balances.items()
-            }
+                
+                exchange_totals[exchange][currency] = exchange_totals[exchange].get(currency, 0.0) + total_value
+                overall_totals[currency] = overall_totals.get(currency, 0.0) + total_value
         
         return {
             "success": True,
             "summary": summary,
+            "totals": {
+                "by_exchange": exchange_totals,
+                "overall": overall_totals
+            },
+            "pricing": full_response.pricing,
             "timestamp": full_response.timestamp
         }
         

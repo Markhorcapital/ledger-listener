@@ -6,18 +6,30 @@ FastAPI service to fetch balances from Gate.io, HTX, MEXC, and Crypto.com. Reads
 ## API Endpoints
 
 - `GET /health` - Health check
-- `GET /api/balances` - Get all balances (requires auth)
-- `GET /api/balances/summary` - Simplified summary (requires auth)
+- `GET /api/balances` - Get all balances (requires auth). Returns:
+  - `accounts`: full balances grouped by exchange/account
+  - `pricing`: live ALI/USD quote fetched from the CoinGecko Pro API (used by Google Sheets)
+- `GET /api/balances/summary` - Simplified summary (requires auth). Returns:
+  - `summary`: balances grouped by exchange → account → currency
+  - `totals.by_exchange`: aggregated totals per exchange (e.g., overall ALI holdings on Gate.io)
+  - `totals.overall`: network-wide totals per currency (ALI, USDT, USD…)
+  - `pricing`: same ALI quote block as `/api/balances`
 - `GET /docs` - Swagger UI documentation
 
 ## Google Apps Script Setup
 
-See `google-apps-script/Code.gs` for the complete script. 
+See `google-apps-script/Code.gs` for the complete script.
 
 1. Copy code to your Google Sheet (Extensions → Apps Script)
 2. Update CONFIG with your server URL and auth token
-3. Run `testAPIConnection()` to test
-4. Run `setupTrigger()` to schedule daily 7 PM updates
+3. Run `testAPIConnection()` to confirm connectivity (writes logs only)
+4. Run `updateBalances()` manually (or schedule via Apps Script triggers)  
+   - Script now writes:
+     - Per-account ALI/USDT/USD balances (with carry-forward for accounts without API keys)
+     - Per-exchange totals
+     - Cumulative ALI / USDT (columns AR & AS)
+     - ALI/USD price from `/api/balances.pricing` (column AX)
+     - ALI USD valuation + total USD valuation columns (AT & AU) using the live price
 
 ## Configuration
 
@@ -25,6 +37,8 @@ All settings in `backend/config.yml`:
 - MongoDB connection (already configured)
 - API auth token (change this!)
 - Service port and logging
+- `pricing.coingecko.*` – enable/disable CoinGecko Pro calls, base URL, API key, contract address, currency, timeout.  
+  (The example config shows the ALI contract address; the real key lives only in your local `config.yml`.)
 
 ## Structure
 
