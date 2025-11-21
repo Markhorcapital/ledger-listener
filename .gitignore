@@ -52,5 +52,5 @@ markhor.cexaccounts.json
 # CLAUDE.md
 # README.md
 
-# Google Apps Script backups
-google-apps-script/previous.gs
+# Google Apps Script (contains API keys)
+google-apps-script/
